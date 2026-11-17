@@ -86,7 +86,7 @@ See `VERIFICATION.md` for detailed justification of:
 - **DateRangeFilter as reusable base** — Avoids duplication across AlertsParams, TopCategoriesParams, SummaryParams
 - **increase_ratio as number** — Stored as 1.4968 (not "49.68%") to sync with API
 - **baseline_average clarity** — Not a fixed 3-period moving average; algorithm output documented
-- **threshold range: >= 0 with no max** — API accepts >= 0 with no max; UI enforces 0.01-1.0 (see components.md)
+- **threshold range** — API accepts >= 0 with no max; UI enforces 0.01-1.0 (see components.md)
 - **limit range: 1-20** — API restriction documented; API may return fewer results
 
 ## API Verification
