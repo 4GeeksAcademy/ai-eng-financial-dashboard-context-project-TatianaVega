@@ -4,8 +4,11 @@
  * and tested against live API responses.
  */
 
+/** Allowed category values, as defined by the OpenAPI enum for `category`. */
+export type Category = 'suppliers' | 'sales' | 'operational' | 'administrative' | 'others';
+
 /**
- * Facets response containing available values and date range for the entire dataset.
+ * Facets response (OpenAPI schema: MetricsFacets) with available values and date range for the entire dataset.
  * Used by: Date Range Filter (Functionality 1) and B2B vs B2C Comparison (Functionality 3).
  * @see GET /api/metrics/facets
  */
@@ -17,7 +20,7 @@ export interface FacetsResponse {
   business_types: Array<'B2B' | 'B2C'>;
 
   /** Array of transaction category values available in the dataset */
-  categories: string[];
+  categories: Category[];
 
   /**
    * Minimum date in the dataset.
@@ -35,15 +38,14 @@ export interface FacetsResponse {
 }
 
 /**
- * Individual anomaly alert entry.
+ * Individual anomaly alert entry (OpenAPI schema: MetricsAlert).
  * Represents a period where spending (outcome) exceeded expected levels.
  * @see GET /api/metrics/alerts
  */
 export interface AlertEntry {
   /**
-   * Period identifier. Format depends on group_by parameter (default is monthly).
-   * Default format: YYYY-MM (month)
-   * Also supports: YYYY-MM-DD (day), or week format depending on API grouping
+   * Period identifier. Format depends on the group_by query parameter:
+   * month (default) YYYY-MM, day YYYY-MM-DD, week YYYY-Www (ISO week).
    * @example "2025-12"
    */
   period: string;
@@ -56,19 +58,16 @@ export interface AlertEntry {
   outcome_total: number;
 
   /**
-   * Historical average of previous periods used as baseline for comparison.
-   * Numeric value in currency units.
-   * This is NOT a fixed 3-period moving average; it represents the statistical baseline
-   * calculated by the backend anomaly detection algorithm.
+   * Cumulative average of outcome_total over all previous periods (not a 3-period moving average).
+   * Numeric value in currency units. The first period never produces an alert because it has no baseline.
    * @example 41404.44
    */
   baseline_average: number;
 
   /**
-   * Ratio of actual outcome vs baseline (outcome_total / baseline_average).
-   * Values > 1.0 indicate spending above baseline.
-   * Values < 1.0 indicate spending below baseline.
-   * Example: 1.4968 means 49.68% above baseline; 0.3632 means 63.68% below baseline.
+   * Relative increase over baseline: (outcome_total - baseline_average) / baseline_average.
+   * A ratio, not a percentage: 1.4968 means +149.68%.
+   * Always greater than the requested threshold, because the endpoint only returns periods above it.
    * @example 1.4968
    */
   increase_ratio: number;
@@ -78,20 +77,20 @@ export interface AlertEntry {
  * Alerts response containing list of anomalies detected based on threshold.
  * @see GET /api/metrics/alerts
  */
-export interface AlertsResponse extends Array<AlertEntry> {}
+export type AlertsResponse = AlertEntry[];
 
 /**
- * Individual category entry with aggregated metrics for a business type.
+ * Individual category entry (OpenAPI schema: TopCategoryItem).
  * Used in top-5 category tables for B2B vs B2C comparison.
  * @see GET /api/metrics/categories/top
  */
 export interface CategoryEntry {
   /**
-   * Category name (e.g., 'sales', 'suppliers', 'administrative').
-   * Valid values provided by FacetsResponse.categories
+   * Category name. One of the Category values.
+   * Income data contains only 'sales' and 'others'.
    * @example "sales"
    */
-  category: string;
+  category: Category;
 
   /**
    * Operation type for this entry.
@@ -114,7 +113,7 @@ export interface CategoryEntry {
  * Note: May return fewer entries if fewer categories exist for the given filters.
  * @see GET /api/metrics/categories/top
  */
-export interface TopCategoriesResponse extends Array<CategoryEntry> {}
+export type TopCategoriesResponse = CategoryEntry[];
 
 /**
  * Summary data point for a period, used in B2B vs B2C comparison chart.
@@ -154,7 +153,7 @@ export interface SummaryDataPoint {
  * Summary response: array of summary data points for a filtered time period.
  * @see GET /api/metrics/summary
  */
-export interface SummaryResponse extends Array<SummaryDataPoint> {}
+export type SummaryResponse = SummaryDataPoint[];
 
 /**
  * Financial movement (transaction) record from the database.
@@ -171,7 +170,7 @@ export interface FinancialMovement {
   operation_type: 'income' | 'outcome';
 
   /** Category of transaction */
-  category: string;
+  category: Category;
 
   /** Business line: 'B2B' or 'B2C' */
   business_type: 'B2B' | 'B2C';
@@ -182,4 +181,4 @@ export interface FinancialMovement {
  * Returns array of financial movements, optionally filtered.
  * @see GET /api/metrics
  */
-export interface MetricsResponse extends Array<FinancialMovement> {}
+export type MetricsResponse = FinancialMovement[];

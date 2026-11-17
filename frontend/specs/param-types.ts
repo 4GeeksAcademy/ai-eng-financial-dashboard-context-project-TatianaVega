@@ -4,6 +4,8 @@
  * and represent actual parameter requirements from live API.
  */
 
+import type { Category } from './api-types';
+
 /**
  * Date range filter parameters.
  * Base type used by multiple endpoints to filter data by date range.
@@ -35,10 +37,9 @@ export interface DateRangeFilter {
 export interface AlertsParams extends DateRangeFilter {
   /**
    * Anomaly detection threshold ratio.
-   * Numeric value with no documented maximum (OpenAPI specifies minimum 0).
-   * Common values: 0.3 (default), 0.1 (strict), 0.5 (lenient).
-   * Values represent the ratio multiplier; e.g., 0.3 flags increases of 30% above baseline.
-   * Note: The PM brief suggested 0.01-1.0 range, but OpenAPI defines only minimum 0.
+   * Flags a period when increase_ratio > threshold. Ratio, not a percentage (0.3 = 30%).
+   * API accepts any number >= 0 (no maximum). Values below 0 return HTTP 422.
+   * UI-enforced range: 0.01 to 1.0 (PM requirement). The UI must reject out-of-range input.
    * @default 0.3
    * @minimum 0
    * @example 0.3
@@ -121,11 +122,10 @@ export interface SummaryParams extends DateRangeFilter {
 
   /**
    * Optional category filter.
-   * Value is a category name (e.g., 'sales', 'suppliers').
-   * Valid category values provided by GET /api/metrics/facets.
+   * Category to include. Valid values: Category.
    * @example "sales"
    */
-  category?: string;
+  category?: Category;
 
   /**
    * Optional operation type filter.
@@ -144,11 +144,10 @@ export interface SummaryParams extends DateRangeFilter {
 export interface MetricsParams extends DateRangeFilter {
   /**
    * Optional category filter.
-   * Value is a category name (e.g., 'sales', 'suppliers').
-   * Valid category values provided by GET /api/metrics/facets.
+   * Category to include. Valid values: Category.
    * @example "sales"
    */
-  category?: string;
+  category?: Category;
 
   /**
    * Optional operation type filter.
@@ -163,4 +162,4 @@ export interface MetricsParams extends DateRangeFilter {
  * No parameters required; this endpoint always returns the full set of available values and date range.
  * @see GET /api/metrics/facets
  */
-export interface FacetsParams {}
+export type FacetsParams = Record<string, never>;
