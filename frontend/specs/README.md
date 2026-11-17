@@ -63,7 +63,7 @@ interface DateRangeFilter {
 interface FacetsResponse {
   operation_types: Array<'income' | 'outcome'>;
   business_types: Array<'B2B' | 'B2C'>;
-  categories: string[];
+  categories: Category[];  // ver api-types.ts
   min_date: string;      // YYYY-MM-DD
   max_date: string;      // YYYY-MM-DD
 }
@@ -81,8 +81,9 @@ interface DateRangeFilterProps {
   endDate?: string;                       // Current value (YYYY-MM-DD)
   onStartDateChange: (date: string) => void;
   onEndDateChange: (date: string) => void;
-  minDateAvailable: string;               // From FacetsResponse.min_date
-  maxDateAvailable: string;               // From FacetsResponse.max_date
+  minDateAvailable?: string;              // From FacetsResponse.min_date; undefined mientras carga o si falla
+  maxDateAvailable?: string;              // From FacetsResponse.max_date; undefined mientras carga o si falla
+  facetsError?: string;                   // Si está definido, los inputs se deshabilitan
   loading?: boolean;
 }
 ```
@@ -91,15 +92,15 @@ interface DateRangeFilterProps {
 
 - Dos inputs de tipo `date` con labels "Fecha de inicio" y "Fecha de fin".
 - Pista de rango debajo: "Rango disponible: 2025-11-01 a 2026-10-28".
-- Inputs con atributo `min="${minDateAvailable}"` y `max="${maxDateAvailable}"`.
+- Inputs con atributos `min` y `max` tomados de `minDateAvailable` y `maxDateAvailable` (sin límites si son undefined).
 
 ### Restricciones de Parámetros
 
 | Parámetro | Tipo | Restricción | Comportamiento |
 |-----------|------|-------------|-----------------|
-| `start_date` | string | Formato YYYY-MM-DD | Si inválido, API devuelve error 400. Cliente debe validar con `input type="date"`. |
-| `end_date` | string | Formato YYYY-MM-DD | Si inválido, API devuelve error 400. |
-| Rango lógico | - | No validado por API | Si `start_date > end_date`, API devuelve array vacío (no error). |
+| `start_date` | string | Formato YYYY-MM-DD | Si inválido, API devuelve 422. El cliente debe validar con `input type="date"`. |
+| `end_date` | string | Formato YYYY-MM-DD | Si inválido, API devuelve 422. |
+| Rango lógico | - | No validado por API | Si `start_date > end_date`, API devuelve `[]` (sin error). UI: no envía la petición y muestra el error de components.md. |
 
 ### Casos Límite
 
@@ -120,12 +121,12 @@ interface DateRangeFilterProps {
 
 **Caso 4: start_date > end_date**
 - Usuario establece `start_date = "2026-06-01"`, `end_date = "2026-03-01"`.
-- API devuelve array vacío (error silencioso).
-- **UI esperada**: Tablas muestran estado vacío con mensaje: "No hay datos en este rango (fecha inicio > fecha fin)."
+- La UI no envía la petición.
+- **UI esperada**: "La fecha de inicio debe ser anterior o igual a la fecha de fin." (ver components.md). La API, si recibe ese rango, devuelve `[]`.
 
 **Caso 5: Rango fuera de disponibilidad**
 - Usuario intenta establecer `start_date = "2026-12-01"` (posterior a máximo disponible).
-- Input `type="date"` previene selección fuera de rango con `max` atributo.
+- El input usa `min` y `max`, pero el usuario puede escribir una fecha fuera de rango.
 - Si se envía de todas formas (bypass), API devuelve array vacío.
 - **UI esperada**: Tabla muestra estado vacío.
 
@@ -145,7 +146,7 @@ GET /api/metrics/alerts?threshold=0.3&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
 
 **Parámetros**:
 
-- `threshold` (number, opcional, default: 0.3): Ratio mínimo de incremento para detectar una anomalía. Valores: >= 0 (sin máximo documentado en OpenAPI). Ejemplo: 0.3 detecta incrementos >= 30% sobre el promedio histórico.
+- `threshold` (number, opcional, default: 0.3): Umbral sobre `increase_ratio` (fracción). Valores: >= 0; la API responde 422 si es negativo. Detecta períodos con `increase_ratio > threshold`. Ejemplo: 0.3 detecta incrementos > 30% sobre la media histórica.
 - `start_date` (string, opcional): Filtro de fecha de inicio (YYYY-MM-DD).
 - `end_date` (string, opcional): Filtro de fecha de fin (YYYY-MM-DD).
 - `business_type` (string, opcional): Filtro por línea de negocio (`B2B` o `B2C`). Cuando se omite, se devuelven alertas de todas las líneas.
@@ -188,8 +189,8 @@ interface AlertsParams extends DateRangeFilter {
 interface AlertEntry {
   period: string;              // Format: YYYY-MM (or YYYY-MM-DD, YYYY-Www depending on group_by)
   outcome_total: number;       // Total spending for this period
-  baseline_average: number;    // Historical average used for comparison
-  increase_ratio: number;      // Ratio: outcome_total / baseline_average
+  baseline_average: number;    // Media acumulada de los períodos anteriores
+  increase_ratio: number;      // Fracción: (outcome_total - baseline_average) / baseline_average
 }
 ```
 
@@ -221,8 +222,8 @@ interface AnomalyAlertsTableProps {
 |-----------|--------|---------|-------|
 | Período | `AlertEntry.period` | Texto (ej: "2025-12") | Según `group_by` parameter |
 | Outcome Registrado | `AlertEntry.outcome_total` | Número con separador de miles, 2 decimales | 103,378.98 |
-| Media Móvil (3 períodos) | `AlertEntry.baseline_average` | Número con separador de miles, 2 decimales | Etiqueta de UI es "Media Móvil" por claridad; internamente es `baseline_average` del API |
-| Incremento Porcentual | Calculado de `AlertEntry.increase_ratio` | Porcentaje con signo | Fórmula: `((increase_ratio - 1) * 100).toFixed(2) + "%"` Ejemplo: 1.4968 → "+49.68%"; 0.3632 → "-63.68%" |
+| Media histórica | `AlertEntry.baseline_average` | Número con separador de miles, 2 decimales | Media acumulada de los períodos anteriores. El PM pidió media móvil de 3 períodos; la API no la calcula. |
+| Incremento Porcentual | Calculado de `AlertEntry.increase_ratio` | Porcentaje con signo | Fórmula: `(increase_ratio * 100).toFixed(2) + "%"`, con "+" delante. Ejemplo: 1.4968 → "+149.68%"; 0.5917 → "+59.17%" |
 
 **Renderizado**:
 
@@ -242,7 +243,7 @@ Reemplaza la tabla completamente, no renderiza tabla vacía.
 **Estado de error** (cuando `error !== undefined`):
 
 ```
-Mostrar mensaje de error donde va la tabla.
+Mostrar el mensaje debajo del input de threshold, según components.md. No renderizar tabla.
 Ejemplo: "Error al cargar alertas. Intenta más tarde."
 ```
 
@@ -250,7 +251,7 @@ Ejemplo: "Error al cargar alertas. Intenta más tarde."
 
 | Parámetro | Tipo | Restricción | Comportamiento |
 |-----------|------|-------------|-----------------|
-| `threshold` | number | >= 0, sin máximo documentado | Si negativo, rechazar en cliente. Si >= 0, enviar a API. |
+| `threshold` | number | API: >= 0 (422 si es negativo). UI: 0.01 a 1.0 | Fuera de [0.01, 1.0] la UI muestra "El threshold debe estar entre 0.01 y 1.0." y no llama a la API. |
 | `start_date` | string | Formato YYYY-MM-DD | Reutiliza validación de Funcionalidad 1. |
 | `end_date` | string | Formato YYYY-MM-DD | Reutiliza validación de Funcionalidad 1. |
 | `business_type` | string | "B2B" o "B2C" | Cuando se omite, se devuelven alertas de ambas líneas. |
@@ -259,28 +260,27 @@ Ejemplo: "Error al cargar alertas. Intenta más tarde."
 
 **Caso 1: Threshold muy bajo (0.01)**
 - Usuario establece `threshold = 0.01`.
-- API detecta incluso incrementos mínimos (>= 1% sobre baseline).
+- API detecta períodos con incremento > 1% sobre la media histórica.
 - **UI esperada**: Tabla muestra muchas filas (posiblemente todos los períodos).
 
 **Caso 2: Threshold muy alto (1.0)**
 - Usuario establece `threshold = 1.0`.
-- API detecta solo anomalías severas (>= 100% sobre baseline, es decir, `increase_ratio >= 2`).
+- API detecta solo períodos con incremento > 100% (`increase_ratio > 1.0`).
 - **UI esperada**: Tabla muestra pocas o ninguna fila, estado vacío posible.
 
 **Caso 3: Threshold negativo**
 - Usuario intenta ingresar `-0.5`.
-- Input `type="number"` puede no prevenir esto, pero lógica de UI debe rechazarlo.
-- **Comportamiento**: No enviar a API; mostrar error en cliente: "El threshold no puede ser negativo."
+- La UI no envía la petición y muestra "El threshold debe estar entre 0.01 y 1.0.". Si la API recibe -0.5 directamente, responde 422.
 
 **Caso 4: Alertas con incremento < threshold**
 - Usuario establece `threshold = 0.5`.
-- API devuelve solo alertas donde `increase_ratio > (1 + threshold)`, es decir, `increase_ratio > 1.5`.
-- Alert con `increase_ratio = 1.3` (30% sobre baseline) NO aparece.
+- API devuelve solo períodos con `increase_ratio > 0.5` (incremento > 50%).
+- El período 2025-12 (`increase_ratio = 1.4968`) y 2026-03 (`0.5917`) aparecen. Un período con `0.3` (+30%) NO aparece.
 - **UI esperada**: Tabla refleja solo anomalías que superan el threshold establecido.
 
 **Caso 5: Sin datos en rango de fechas filtrado**
 - Usuario establece `start_date = "2026-09-01"` y `end_date = "2026-09-30"`.
-- API devuelve array vacío (no hay alertas en ese período).
+- API devuelve `[]` si ningún período supera el threshold en ese rango.
 - **UI esperada**: Mostrar mensaje de estado vacío: "No se detectaron anomalías para el threshold actual en este período."
 
 **Caso 6: Cambio de threshold dispara re-fetch**
@@ -295,7 +295,7 @@ Ejemplo: "Error al cargar alertas. Intenta más tarde."
 
 ### Descripción
 
-Nueva página en el dashboard que compara el rendimiento de ingresos entre B2B y B2C. Contiene dos paneles lado a lado (cada uno con una tabla top-5 de categorías) y un gráfico que compara el total de ingresos por período entre ambas líneas de negocio. El usuario puede filtrar por rango de fechas.
+Nueva página en el dashboard que compara el rendimiento de ingresos entre B2B y B2C. Contiene dos paneles lado a lado (cada uno con una tabla de categorías de ingreso; en los datos actuales la API devuelve 2 filas por línea) y un gráfico que compara el total de ingresos por período entre ambas líneas de negocio. El usuario puede filtrar por rango de fechas.
 
 ### Endpoints
 
@@ -321,17 +321,17 @@ GET /api/metrics/categories/top?operation_type=income&limit=5&business_type=B2C&
   {
     "category": "sales",
     "operation_type": "income",
-    "total_amount": 1132097.38
+    "total_amount": 557903.97
   },
   {
     "category": "others",
     "operation_type": "income",
-    "total_amount": 126049.49
+    "total_amount": 57636.75
   }
 ]
 ```
 
-**Nota**: Puede devolver menos de 5 filas si existen menos de 5 categorías con ingresos para esa línea de negocio.
+**Nota**: Puede devolver menos de 5 filas si existen menos de 5 categorías con ingresos para esa línea de negocio. En los datos actuales de ingresos, la API devuelve 2 filas por línea.
 
 **Obtener datos agregados para gráfico comparativo:**
 
@@ -352,15 +352,15 @@ GET /api/metrics/summary?business_type=B2C&start_date=YYYY-MM-DD&end_date=YYYY-M
 [
   {
     "period": "2025-11",
-    "income": 500000,
-    "outcome": 300000,
-    "net": 200000
+    "income": 54757.96,
+    "outcome": 26785.3,
+    "net": 27972.66
   },
   {
     "period": "2025-12",
-    "income": 600000,
-    "outcome": 350000,
-    "net": 250000
+    "income": 47166.41,
+    "outcome": 72778.68,
+    "net": -25612.27
   }
 ]
 ```
@@ -371,7 +371,7 @@ GET /api/metrics/summary?business_type=B2C&start_date=YYYY-MM-DD&end_date=YYYY-M
 GET /api/metrics/facets
 ```
 
-Devuelve `categories` array con todas las categorías disponibles.
+Devuelve `categories` array con todas las categorías disponibles. Es global (no separa B2B/B2C); las categorías de cada panel salen de `/api/metrics/categories/top?business_type=`.
 
 ### Tipos TypeScript
 
@@ -389,7 +389,7 @@ interface TopCategoriesParams extends DateRangeFilter {
 
 ```typescript
 interface CategoryEntry {
-  category: string;
+  category: Category;  // ver api-types.ts
   operation_type: 'income' | 'outcome';
   total_amount: number;
 }
@@ -435,6 +435,8 @@ interface ComparisonPageProps {
   onEndDateChange: (date: string) => void;
   minDateAvailable: string;
   maxDateAvailable: string;
+  b2bGroupTotal: number;   // suma de income B2B en el rango activo (denominador de %)
+  b2cGroupTotal: number;   // suma de income B2C en el rango activo (denominador de %)
   loading?: boolean;
   error?: string;
 }
@@ -448,6 +450,7 @@ interface ComparisonPageProps {
 interface TopCategoriesPanelProps {
   businessType: 'B2B' | 'B2C';
   categories: CategoryEntry[];
+  groupTotal: number;   // total de ingresos del grupo en el rango activo
   loading?: boolean;
 }
 ```
@@ -457,8 +460,8 @@ interface TopCategoriesPanelProps {
 | Encabezado | Fuente | Formato | Notas |
 |-----------|--------|---------|-------|
 | Categoría | `CategoryEntry.category` | Texto | Nombre de la categoría |
-| Total de Ingresos | `CategoryEntry.total_amount` | Número con separador de miles, 2 decimales | 1,132,097.38 |
-| % del Total del Grupo | Calculado | Porcentaje | Fórmula: `(total_amount / sum_all) * 100%`. Ejemplo: si total_amount=600000 y sum_all=1000000, mostrar "60.0%" |
+| Total de Ingresos | `CategoryEntry.total_amount` | Número con separador de miles, 2 decimales | 557,903.97 |
+| % del Total del Grupo | Calculado | Porcentaje | Fórmula: `(total_amount / groupTotal) * 100`, con 1 decimal. Ejemplo: total_amount=600000 y groupTotal=1000000 → "60.0%". Si groupTotal es 0 → "0.0%". |
 
 **Nombre**: `ComparisonChart`
 
@@ -486,7 +489,7 @@ interface ComparisonChartProps {
 | Parámetro | Tipo | Restricción | Comportamiento |
 |-----------|------|-------------|-----------------|
 | `operation_type` | string | Usar "income" | Hardcodeado a "income" en solicitudes a `/categories/top`. |
-| `limit` | integer | 1-20 | Valor por defecto: 5. API rechaza valores fuera de rango con error 400. |
+| `limit` | integer | 1-20 | Valor por defecto: 5. API rechaza valores fuera de rango con error 422. |
 | `business_type` | string | "B2B" o "B2C" | Requerido para cada panel y solicitud de resumen. |
 | `start_date` | string | Formato YYYY-MM-DD | Reutiliza validación de Funcionalidad 1. |
 | `end_date` | string | Formato YYYY-MM-DD | Reutiliza validación de Funcionalidad 1. |
@@ -509,19 +512,19 @@ interface ComparisonChartProps {
 
 **Caso 3: Solo una línea de negocio tiene datos**
 - Período contiene ingresos solo de B2B, no de B2C.
-- Panel B2B renderiza tabla top-5; panel B2C renderiza estado vacío.
+- Panel B2B renderiza su tabla de categorías (2 filas en los datos actuales); panel B2C renderiza estado vacío.
 - Gráfico muestra barras/línea solo para B2B, cero para B2C en ese período.
 - **UI esperada**: Asimétrico pero correcto, sin errores.
 
 **Caso 4: Límite de 1 categoría**
-- Usuario (backend/admin) configura `limit=1`.
-- API devuelve solo la categoría con mayor ingreso para cada línea.
-- **UI esperada**: Tabla con 1 fila, porcentaje "100.0%" (es el 100% de las categorías devueltas).
+- Usuario configura una solicitud con `limit=1` (la UI no lo usa; fija 5).
+- API devuelve solo la categoría con mayor ingreso de cada línea.
+- **UI esperada**: Tabla con 1 fila. El porcentaje se calcula sobre el total del grupo, no sobre las filas mostradas, por lo que no es 100%.
 
 **Caso 5: Sin datos en gráfico (rango de fechas vacío)**
 - Usuario establece `start_date = "2026-11-01"` (futuro, fuera del dataset).
 - Ambas llamadas a `/summary` devuelven arrays vacíos.
-- **UI esperada**: Gráfico no renderiza series, muestra "Sin datos disponibles en este período".
+- **UI esperada**: Gráfico no renderiza series, muestra "No hay datos disponibles para este período."
 
 **Caso 6: Cambio de filtro de fechas**
 - Usuario modifica `start_date` o `end_date`.
@@ -561,7 +564,7 @@ interface ComparisonChartProps {
 
 ## Validación de Tipos
 
-Todos los tipos TypeScript en este proyecto compilan sin errores con `npx tsc --noEmit`. No se usa `any` ni `object` genérico; todas las propiedades están completamente tipadas.
+Todos los tipos de los specs se validan con `npx tsc --noEmit --ignoreConfig --strict --target es2020 --moduleResolution bundler --module esnext specs/api-types.ts specs/param-types.ts` (desde `frontend/`). `tsconfig.app.json` debe seguir compilando. No se usa `any` ni `object` genérico; todas las propiedades están completamente tipadas.
 
 **Archivos de tipo**:
 
@@ -576,4 +579,4 @@ Todos los tipos TypeScript en este proyecto compilan sin errores con `npx tsc --
 - El API puede devolver menos resultados que el `limit` solicitado (p. ej., top-5 con solo 2 categorías).
 - Estados vacíos siempre muestran un mensaje explícito, nunca una tabla vacía.
 - Los filtros de fecha son opcionales en cliente; cuando ambos están vacíos, la API devuelve todo el dataset.
-- El threshold de alertas no tiene máximo documentado; la UI puede sugerir 1.0 pero permitir valores mayores.
+- La API acepta `threshold` >= 0 sin máximo; la UI limita el rango a 0.01–1.0.
