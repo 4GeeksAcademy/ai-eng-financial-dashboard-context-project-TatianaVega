@@ -90,7 +90,7 @@ A coding agent can implement these specs **without asking clarifying questions**
 ### Feature 2: Anomaly Alerts Table
 - **Component**: `AnomalyAlertsTable`
 - **Endpoint**: `GET /api/metrics/alerts?threshold=...`
-- **Columns**: period, outcome_total, baseline_average, increase_ratio (as %)
+- **Columns**: period, outcome_total, baseline_average, increase_ratio (fracción; `* 100` para %)
 - **Props**: `alerts`, `threshold`, `onThresholdChange`, `loading`, `error`
 - **Edge Cases**: 6 (low threshold, high threshold, negative input, no data, etc.)
 

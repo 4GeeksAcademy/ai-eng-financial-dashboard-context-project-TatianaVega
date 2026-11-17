@@ -24,14 +24,14 @@ This directory contains complete, verified specifications for three new dashboar
 ### 🚨 Feature 2: Anomaly Alerts Table
 - **Endpoints**: `GET /api/metrics/alerts?threshold=0.3&...`
 - **Components**: `AnomalyAlertsTable`
-- **Columns**: period, outcome_total, baseline_average, increase_ratio (as %)
+- **Columns**: period, outcome_total, baseline_average, increase_ratio (fracción; `* 100` para %)
 - **Edge cases**: 6 documented (low threshold, high threshold, negative input, no data, etc.)
 - **Specs**: `components.md` (lines 73-250), `README.md` (lines 131-350)
 
 ### 📊 Feature 3: B2B vs B2C Comparison
 - **Endpoints**: `GET /api/metrics/categories/top?operation_type=income&...` (2 calls), `GET /api/metrics/summary?business_type=...` (2 calls)
 - **Components**: `ComparisonPage`, `TopCategoriesPanel`, `ComparisonChart`
-- **Tables**: Top-5 categories per business line with % of group total
+- **Tables**: Categories per business line (máx. 2 filas de ingreso en los datos actuales) with % of group total
 - **Chart**: Income comparison B2B vs B2C by period
 - **Edge cases**: 6 documented (empty panels, single business line, limit=1, etc.)
 - **Specs**: `components.md` (lines 251-405), `README.md` (lines 351-579)
@@ -86,7 +86,7 @@ See `VERIFICATION.md` for detailed justification of:
 - **DateRangeFilter as reusable base** — Avoids duplication across AlertsParams, TopCategoriesParams, SummaryParams
 - **increase_ratio as number** — Stored as 1.4968 (not "49.68%") to sync with API
 - **baseline_average clarity** — Not a fixed 3-period moving average; algorithm output documented
-- **threshold range: >= 0 with no max** — Corrects PM brief (not 0.01-1.0); matches OpenAPI
+- **threshold range: >= 0 with no max** — API accepts >= 0 with no max; UI enforces 0.01-1.0 (see components.md)
 - **limit range: 1-20** — API restriction documented; API may return fewer results
 
 ## API Verification

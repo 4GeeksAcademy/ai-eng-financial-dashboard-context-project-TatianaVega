@@ -110,12 +110,12 @@ El brief del PM no especificaba que `DateRangeFilter` fuera una interfaz reutili
 | "período" | ✅ `period` (string, ej: "2025-12") | AlertEntry.period |
 | "outcome registrado" | ✅ `outcome_total` (number) | AlertEntry.outcome_total |
 | "media móvil 3 períodos" | ✅ `baseline_average` (number) | AlertEntry.baseline_average (Nota: no es media móvil de ventana fija documentada, es promedio histórico del algoritmo) |
-| "incremento porcentual" | ✅ `increase_ratio` (number, 1.4968 = 49.68% sobre baseline) | Calculado como `(increase_ratio - 1) * 100%` en componente |
+| "incremento porcentual" | ✅ `increase_ratio` (number, 1.4968 = +149.68% sobre baseline) | Calculado como `increase_ratio * 100` en componente, con signo |
 
 **❌ Diferencia importante con brief**:
 - Brief sugería threshold rango 0.01-1.0
 - OpenAPI especifica: `minimum: 0` (sin máximo documentado)
-- **Resolución**: Especificación permite `threshold >= 0` sin máximo; UI puede sugerir 1.0 pero permitir entrada superior.
+- **Resolución**: API acepta `threshold >= 0` sin máximo; la UI valida 0.01–1.0 (ver components.md).
 
 **Especificación TypeScript**: 
 - ✅ `AlertEntry`, `AlertsResponse` en `api-types.ts`
@@ -140,12 +140,12 @@ El brief del PM no especificaba que `DateRangeFilter` fuera una interfaz reutili
   {
     "category": "sales",
     "operation_type": "income",
-    "total_amount": 1132097.38
+    "total_amount": 557903.97
   },
   {
     "category": "others",
     "operation_type": "income",
-    "total_amount": 126049.49
+    "total_amount": 57636.75
   }
 ]
 ```
@@ -171,15 +171,15 @@ El brief del PM no especificaba que `DateRangeFilter` fuera una interfaz reutili
 [
   {
     "period": "2025-11",
-    "income": 500000,
-    "outcome": 300000,
-    "net": 200000
+    "income": 54757.96,
+    "outcome": 26785.3,
+    "net": 27972.66
   },
   {
     "period": "2025-12",
-    "income": 600000,
-    "outcome": 350000,
-    "net": 250000
+    "income": 47166.41,
+    "outcome": 72778.68,
+    "net": -25612.27
   }
 ]
 ```
@@ -195,7 +195,7 @@ El brief del PM no especificaba que `DateRangeFilter` fuera una interfaz reutili
 
 ### ✅ Verificado: GET /api/metrics/facets (para referencias de categorías)
 
-Mismo endpoint que Funcionalidad 1, proporciona `categories` array para referencias de categorías disponibles en comparativa.
+Mismo endpoint que Funcionalidad 1. Su `categories` es global (no separa B2B/B2C); las categorías de cada panel salen de `/categories/top?business_type=`.
 
 ---
 
@@ -227,7 +227,7 @@ Mismo endpoint que Funcionalidad 1, proporciona `categories` array para referenc
 
 ### 4. Threshold sin máximo documentado
 
-**Decisión**: Especificar `threshold >= 0` sin máximo en tipos. UI puede sugerir rango 0.1-1.0 pero permitir entrada superior.
+**Decisión**: API `threshold >= 0` sin máximo en tipos. La UI valida el rango 0.01–1.0.
 
 **Razón**: Brief sugería 0.01-1.0, pero OpenAPI solo especifica `minimum: 0` (sin máximo). Especificación debe reflejar realidad de API.
 
