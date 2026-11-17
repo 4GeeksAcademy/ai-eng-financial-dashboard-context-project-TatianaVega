@@ -42,15 +42,20 @@ interface DateRangeFilterProps {
 
   /**
    * Fecha mínima disponible en el dataset (YYYY-MM-DD).
-   * Obtenida de FacetsResponse.min_date
+   * Obtenida de FacetsResponse.min_date. Undefined mientras carga facets o si falló.
    */
-  minDateAvailable: string;
+  minDateAvailable?: string;
 
   /**
    * Fecha máxima disponible en el dataset (YYYY-MM-DD).
-   * Obtenida de FacetsResponse.max_date
+   * Obtenida de FacetsResponse.max_date. Undefined mientras carga facets o si falló.
    */
-  maxDateAvailable: string;
+  maxDateAvailable?: string;
+
+  /**
+   * Mensaje de error si GET /api/metrics/facets falla. Si está definido, los inputs se deshabilitan.
+   */
+  facetsError?: string;
 
   /**
    * Estado de carga. Si true, los inputs se desactivan y se muestra un indicador.
@@ -63,15 +68,16 @@ interface DateRangeFilterProps {
 
 - **Layout**: Dos inputs de tipo `date` lado a lado o en fila única. Labels: "Fecha de inicio" y "Fecha de fin".
 - **Pista de rango**: Texto informativo debajo de los inputs mostrando: `"Rango disponible: ${minDateAvailable} a ${maxDateAvailable}"`.
-- **Solo inicio relleno**: Si `startDate` está establecido pero `endDate` no, el filtro se aplica desde inicio hasta la fecha máxima disponible (el componente NO fuerza un `endDate`; es responsabilidad del contenedor decidir cómo procesar).
-- **Solo fin relleno**: Si `endDate` está establecido pero `startDate` no, el filtro se aplica desde la fecha mínima disponible hasta fin.
+- **Solo inicio relleno**: el contenedor envía solo `start_date`; la API no aplica límite superior (datos desde inicio hasta el último dato disponible). El componente no modifica `endDate`.
+- **Solo fin relleno**: el contenedor envía solo `end_date`; la API no aplica límite inferior (datos desde el primer dato disponible hasta fin).
 - **Ambos vacíos**: Se muestra el mensaje de rango disponible; no se aplica filtro.
+- **Inicio posterior a fin** (ambos rellenos y `startDate > endDate`): mostrar `"La fecha de inicio debe ser anterior o igual a la fecha de fin."` y no enviar la petición con ese rango.
 - **Estados de entrada**:
   - Input `type="date"` con validación HTML5.
   - `min` atributo = `minDateAvailable`.
   - `max` atributo = `maxDateAvailable`.
   - Deshabilitado cuando `loading === true`.
-- **Comportamiento en caso de error**: Si `minDateAvailable` o `maxDateAvailable` son indefinidos o inválidos, mostrar mensaje de error: `"No se pudo cargar el rango de fechas disponibles. Intenta más tarde."`.
+- **Comportamiento en caso de error**: Si `facetsError` está definido, mostrar `"No se pudo cargar el rango de fechas disponibles. Intenta más tarde."` y deshabilitar ambos inputs..
 
 **Renderizado condicional**:
 
@@ -79,11 +85,11 @@ interface DateRangeFilterProps {
 Si loading === true:
   Inputs deshabilitados + spinner o skeleton
   
-Si minDateAvailable && maxDateAvailable:
+Si minDateAvailable y maxDateAvailable están definidos:
   Render inputs normales + pista de rango
   
-Si error al obtener facets:
-  Mostrar mensaje de error; inputs no renderizados o deshabilitados
+Si facetsError está definido:
+  Mostrar mensaje de error; inputs deshabilitados
 ```
 
 ---
@@ -106,8 +112,8 @@ interface AnomalyAlertsTableProps {
   alerts: AlertEntry[];
 
   /**
-   * Valor actual del threshold (ratio entre 0 y sin máximo documentado).
-   * Default por contrato de API: 0.3
+   * Valor actual del threshold (ratio). Rango válido en UI: 0.01 a 1.0.
+   * Default: 0.3
    */
   threshold: number;
 
@@ -136,16 +142,15 @@ interface AnomalyAlertsTableProps {
 |---------|--------------|---------------|-------------|
 | **Período** | `string` | `AlertEntry.period` | Identificador del período (p. ej., `2025-12` para diciembre 2025) |
 | **Outcome Registrado** | `number` | `AlertEntry.outcome_total` | Total de gasto para este período (formato: número con separador de miles y 2 decimales) |
-| **Media Móvil (3 períodos)** | `number` | `AlertEntry.baseline_average` | Promedio histórico usado como línea base (formato: número con separador de miles y 2 decimales). **Nota**: El campo se llama "Media Móvil" en la UI por claridad; internamente es `baseline_average` del API, que representa el promedio calculado por el algoritmo de detección de anomalías, no necesariamente una media móvil de ventana fija de 3 períodos. |
-| **Incremento Porcentual** | `string` | `AlertEntry.increase_ratio` | Porcentaje calculado como `(increase_ratio - 1) * 100%`. Ejemplo: si `increase_ratio = 1.4968`, mostrar `+49.68%`. Si `increase_ratio = 0.3632`, mostrar `-63.68%`. |
+| **Media histórica** | `number` | `AlertEntry.baseline_average` | Media acumulada de `outcome_total` de todos los períodos anteriores (formato: número con separador de miles y 2 decimales). El PM pidió media móvil de 3 períodos; la API no la calcula. Ver Desajustes PM vs API. |
+| **Incremento Porcentual** | `string` | `AlertEntry.increase_ratio` | Porcentaje calculado como `increase_ratio * 100`, con signo `+`, 2 decimales y sufijo `%`. Ejemplo: `1.4968` → `+149.68%`; `0.3632` → `+36.32%`. Siempre positivo, porque la API solo devuelve períodos por encima del threshold. |
 
 **Comportamiento**:
 
 - **Input de Threshold**:
   - Tipo: `number` input.
   - Label: `"Threshold de alerta"`.
-  - Valor mínimo: `0` (documentado en OpenAPI).
-  - Valor máximo: sin límite documentado; UX puede sugerir máximo 1.0 pero permitir entrada manual.
+  - Valor mínimo: `0.01`. Valor máximo: `1.0`. Paso: `0.01`.
   - Default: `0.3`.
   - Cuando el usuario cambia el valor, ejecutar `onThresholdChange(newValue)` y la tabla debe actualizarse con nuevas alertas (contenedor re-fetcha datos).
 
@@ -177,9 +182,9 @@ interface AnomalyAlertsTableProps {
 
 **Validación de threshold**:
 
-- Si el usuario ingresa un valor negativo, rechazarlo (no permitir envío).
-- Si ingresa un valor válido (>= 0), permitir envío inmediato.
-- No validar máximo en el cliente; dejar que la API rechace si es necesario.
+- Valores fuera de [0.01, 1.0], vacíos o no numéricos: mostrar `"El threshold debe estar entre 0.01 y 1.0."`, no ejecutar `onThresholdChange` y mantener la última tabla válida.
+- Valores válidos: ejecutar `onThresholdChange` inmediatamente.
+- La API acepta cualquier valor >= 0 (HTTP 422 si es negativo); el límite superior 1.0 es regla de la UI, no de la API.
 
 **Integración con Funcionalidad 1 (Filtro de fechas)**:
 
@@ -203,23 +208,20 @@ interface AnomalyAlertsTableProps {
 interface ComparisonPageProps {
   /**
    * Tabla de categorías top-5 para B2B.
-   * Array de CategoryEntry con operation_type="income" y business_type="B2B".
+   * Fuente: GET /api/metrics/categories/top?operation_type=income&limit=5&business_type=B2B (con start_date/end_date si están definidos). Máximo 2 filas en la API.
    */
   b2bCategories: CategoryEntry[];
 
   /**
    * Tabla de categorías top-5 para B2C.
-   * Array de CategoryEntry con operation_type="income" y business_type="B2C".
+   * Fuente: GET /api/metrics/categories/top?operation_type=income&limit=5&business_type=B2C (con start_date/end_date si están definidos). Máximo 2 filas en la API.
    */
   b2cCategories: CategoryEntry[];
 
   /**
-   * Datos agregados para el gráfico comparativo (B2B total vs B2C total).
-   * Array de SummaryDataPoint, cada uno contiene income, outcome, net por período.
-   * Este array es la combinación de dos solicitudes:
-   * - GET /api/metrics/summary?business_type=B2B&date_range...
-   * - GET /api/metrics/summary?business_type=B2C&date_range...
-   * El componente debe renderizar dos series en el gráfico (una por business_type).
+   * Puntos del gráfico: total de ingresos B2B y B2C por período.
+   * Combina GET /api/metrics/summary?business_type=B2B&group_by=month y ...business_type=B2C..., usando `SummaryDataPoint.income` y uniendo por `period`.
+   * Incluye start_date/end_date si están definidos.
    */
   chartData: Array<{ period: string; b2b: number; b2c: number }>;
 
@@ -256,6 +258,16 @@ interface ComparisonPageProps {
   maxDateAvailable: string;
 
   /**
+   * Total de ingresos del grupo B2B en el rango activo (denominador de %). Fuente: GET /api/metrics/summary?business_type=B2B, suma de `income`.
+   */
+  b2bGroupTotal: number;
+
+  /**
+   * Total de ingresos del grupo B2C en el rango activo (denominador de %). Fuente: GET /api/metrics/summary?business_type=B2C, suma de `income`.
+   */
+  b2cGroupTotal: number;
+
+  /**
    * Estado de carga general.
    */
   loading?: boolean;
@@ -274,13 +286,9 @@ interface ComparisonPageProps {
   <DateRangeFilter /> (Reutilizado de Funcionalidad 1)
   
   <div className="grid grid-cols-2 gap-6">
-    <Panel business_type="B2B">
-      <TopCategoriesTable categories={b2bCategories} />
-    </Panel>
+    <TopCategoriesPanel businessType="B2B" categories={b2bCategories} groupTotal={b2bGroupTotal} loading={loading} />
     
-    <Panel business_type="B2C">
-      <TopCategoriesTable categories={b2cCategories} />
-    </Panel>
+    <TopCategoriesPanel businessType="B2C" categories={b2cCategories} groupTotal={b2cGroupTotal} loading={loading} />
   </div>
   
   <ComparisonChart data={chartData} />
@@ -306,6 +314,11 @@ interface TopCategoriesPanelProps {
   categories: CategoryEntry[];
 
   /**
+   * Total de ingresos del grupo en el rango activo. Denominador de `% del Total del Grupo`.
+   */
+  groupTotal: number;
+
+  /**
    * Estado de carga.
    */
   loading?: boolean;
@@ -318,13 +331,13 @@ interface TopCategoriesPanelProps {
 |---------|--------------|---------------|-------------|
 | **Categoría** | `string` | `CategoryEntry.category` | Nombre de la categoría (p. ej., `sales`, `suppliers`) |
 | **Total de Ingresos** | `number` | `CategoryEntry.total_amount` | Monto total (formato: número con separador de miles y 2 decimales) |
-| **% del Total del Grupo** | `string` | Calculado en frontend | Porcentaje sobre la suma de todos los `total_amount` en el array. Fórmula: `(category.total_amount / sum(all.total_amount)) * 100%`. Formato: `XX.X%` |
+| **% del Total del Grupo** | `string` | Calculado en frontend | `(total_amount / groupTotal) * 100`. Formato: `XX.X%`. `groupTotal` es el total de ingresos del grupo, no la suma del top. |
 
 **Comportamiento**:
 
 - **Tabla**:
   - Ordenada por `total_amount` descendente (ya ordenada por API, pero mantener en componente).
-  - Máximo 5 filas.
+  - Máximo 5 filas. Para ingresos la API devuelve como máximo 2 (`sales` y `others`).
   
 - **Estado vacío (array vacío)**:
   - Renderizar mensaje:
@@ -337,9 +350,9 @@ interface TopCategoriesPanelProps {
   - Si `loading === true`, mostrar skeleton/spinner.
 
 - **Cálculo de porcentaje**:
-  - Sumar todos los `total_amount` en `categories`.
-  - Para cada fila: `(total_amount / sum) * 100`.
-  - Redondear a 1 decimal.
+  - Denominador: `groupTotal`.
+  - Para cada fila: `(total_amount / groupTotal) * 100`, redondeado a 1 decimal.
+  - Si `groupTotal` es 0, mostrar `0.0%`.
 
 #### `ComparisonChart`
 
@@ -365,7 +378,8 @@ interface ComparisonChartProps {
 
 **Comportamiento**:
 
-- **Tipo de gráfico**: Gráfico de líneas o barras agrupadas.
+- **Tipo de gráfico**: barras agrupadas (una barra B2B y una B2C por período).
+- **Valores**: `b2b` = total de ingresos B2B del período; `b2c` = total de ingresos B2C del período. Ambos en unidades de moneda.
 - **Ejes**:
   - X: períodos (p. ej., meses `2025-11`, `2025-12`, etc.).
   - Y: monto en unidades de moneda.
@@ -374,6 +388,7 @@ interface ComparisonChartProps {
   - Serie 2 (B2C): color verde/secundario.
 - **Etiqueta**: Título del gráfico: `"Comparación de Ingresos Totales: B2B vs B2C"`.
 - **Tooltip**: Mostrar monto exacto y línea de negocio al pasar el mouse.
+- **Sin datos** (`data` vacío): mostrar `"No hay datos disponibles para este período."` en lugar del gráfico.
 
 ---
 
@@ -403,3 +418,11 @@ interface ComparisonChartProps {
 - Re-fetchar datos cuando cambien estos filtros.
 - Pasar props actualizadas a componentes hijo.
 - Manejar errores de API y estado de carga.
+
+---
+
+## Desajustes PM vs API
+
+- **Media móvil de 3 períodos**: la API devuelve la media acumulada de todos los períodos previos (`baseline_average`). La UI la etiqueta "Media histórica". Una media móvil real requiere cambiar el backend (fuera de esta spec).
+- **Top 5 de ingresos**: la API solo tiene categorías `sales` y `others` para ingresos; cada panel muestra como máximo 2 filas.
+- **Categorías por grupo**: `FacetsResponse.categories` es global y no separa por B2B/B2C. Las categorías de cada panel vienen de `/api/metrics/categories/top?business_type=`.
