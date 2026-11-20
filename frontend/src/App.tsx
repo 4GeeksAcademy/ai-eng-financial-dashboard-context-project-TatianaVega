@@ -15,8 +15,18 @@ import { computeKPIs, computeMonthlyData } from "@/lib/financial-utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
-async function fetchFinancialData(): Promise<FinancialMovement[]> {
-  const response = await fetch(`${API_BASE_URL}/api/metrics`);
+async function fetchFinancialData(
+  startDate?: string,
+  endDate?: string,
+): Promise<FinancialMovement[]> {
+  const params = new URLSearchParams();
+  if (startDate) params.append("start_date", startDate);
+  if (endDate) params.append("end_date", endDate);
+  const query = params.toString();
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/metrics${query ? `?${query}` : ""}`,
+  );
   if (!response.ok) {
     throw new Error(`Failed to fetch financial data: ${response.status}`);
   }
@@ -40,7 +50,9 @@ function App() {
   const [alertsError, setAlertsError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchFinancialData()
+    setLoading(true);
+    setError(null);
+    fetchFinancialData(startDate, endDate)
       .then((movements) => {
         setMetrics(computeKPIs(movements));
         setMonthlyData(computeMonthlyData(movements));
@@ -53,7 +65,7 @@ function App() {
       .finally(() => {
         setLoading(false);
       });
-  }, []);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     const fetchFacets = async () => {
